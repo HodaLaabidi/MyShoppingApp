@@ -1,5 +1,11 @@
 package com.example.myshoppingapp
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,13 +24,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,147 +39,220 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.navigation.NavController
 import com.example.myshoppingapp.ui.theme.MyShoppingAppTheme
 
 data class ShoppingItem(
     val id: Int,
     val name: String,
     val quantity: Int,
-    val isEditing: Boolean = false
+    val isEditing: Boolean = false,
+    val address: String = ""
 )
 
+@SuppressLint("MissingPermission", "SuspiciousIndentation")
 @Composable
-fun ShoppingListApp() {
+fun ShoppingListApp(
+    locationUtils: LocationUtils,
+    viewModel: LocationViewModel,
+    navController: NavController,
+    context: Context,
+    address: String
+
+) {
     var sItems by remember { mutableStateOf(listOf<ShoppingItem>()) }
     var showDialog by remember { mutableStateOf(false) }
     var itemName by remember { mutableStateOf("") }
     var itemQuantity by remember { mutableStateOf("") }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center
-        ) {
-            Button(
-                onClick = { showDialog = true },
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(top = 80.dp)
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { permissions ->
+            if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+                && permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
             ) {
-                Text("Add Item")
+
+                // I have access to location
+
+                locationUtils.requestLocationUpdates(viewModel)
+
+            } else {
+                // ask for permission
+                val activity = context as? MainActivity
+                val rationalRequired = activity?.let {
+                    ActivityCompat.shouldShowRequestPermissionRationale(
+                        it,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                    ) || ActivityCompat.shouldShowRequestPermissionRationale(
+                        it,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                } ?: false
+                if (rationalRequired) {
+                    Toast.makeText(
+                        context, "Location permission is required for this feature to work",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Location permission is required please enable it in Android Settings",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
-            ) {
-                items(sItems) { item ->
-                    if (item.isEditing) {
-                        ShoppingItemEditor(
-                            item = item,
-                            onEditComplete = { editedName, editedQuantity ->
-                                sItems = sItems.map {
-                                    if (it.id == item.id) {
-                                        it.copy(name = editedName, quantity = editedQuantity, isEditing = false)
-                                    } else {
-                                        it
-                                    }
+        })
+
+
+
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Button(
+            onClick = { showDialog = true },
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 80.dp)
+        ) {
+            Text("Add Item")
+        }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            items(sItems) { item ->
+                if (item.isEditing) {
+                    ShoppingItemEditor(
+                        item = item,
+                        onEditComplete = { editedName, editedQuantity ->
+                            sItems = sItems.map {
+                                if (it.id == item.id) {
+                                    it.copy(
+                                        name = editedName,
+                                        quantity = editedQuantity,
+                                        isEditing = false
+                                    )
+                                } else {
+                                    it
                                 }
-                            })
-                    } else {
-                        ShoppingListItem(
-                            item,
-                            {
-                                // finding out which item we are editing and changing is "isEditing boolean" to true
-                                sItems = sItems.map { it.copy(isEditing = it.id == item.id) }
-                            },
-                            {
-                                sItems = sItems - item
                             }
-                        )
+                        })
+                } else {
+                    ShoppingListItem(
+                        item,
+                        {
+                            // finding out which item we are editing and changing is "isEditing boolean" to true
+                            sItems = sItems.map { it.copy(isEditing = it.id == item.id) }
+                        },
+                        {
+                            sItems = sItems - item
+                        }
+                    )
 
 
+                }
+            }
+
+        }
+    }
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            confirmButton = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Button(onClick = {
+                        if (itemName.isNotBlank()) {
+                            val newItem =
+                                ShoppingItem(
+                                    id = (sItems.maxOfOrNull { it.id } ?: 0) + 1,
+                                    name = itemName,
+                                    quantity = itemQuantity.toIntOrNull() ?: 1,
+                                    address = address
+                                )
+                            sItems = sItems + newItem
+
+                            showDialog = false
+                            itemName = ""
+                            itemQuantity = ""
+                        }
+                    }) {
+                        Text("Add")
+                    }
+                    Button(onClick = {
+                        showDialog = false
+                        itemName = ""
+                        itemQuantity = ""
+                    }) {
+                        Text("Cancel")
                     }
                 }
-
-            }
-        }
-        if (showDialog) {
-            AlertDialog(
-                onDismissRequest = { showDialog = false },
-                confirmButton = {
-                    Row(
+            },
+            title = { Text(" Add shopping Item") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = itemName,
+                        onValueChange = { itemName = it },
+                        singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Button(onClick = {
-                            if (itemName.isNotBlank()) {
-                                val newItem =
-                                    ShoppingItem(
-                                        id = (sItems.maxOfOrNull { it.id } ?: 0) + 1,
-                                        name = itemName,
-                                        quantity = itemQuantity.toIntOrNull() ?: 1
-                                    )
-                                sItems = sItems + newItem
+                        label = { Text("Item Name") }
+                    )
+
+                    OutlinedTextField(
+                        value = itemQuantity,
+                        onValueChange = { itemQuantity = it },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        label = { Text("Quantity") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+
+                    Button(onClick = {
+                        if (locationUtils.hasLocationPermission(context)) {
+                            locationUtils.requestLocationUpdates(viewModel)
+                            navController.navigate("locationscreen") {
+                                this.launchSingleTop
                             }
-                            showDialog = false
-                            itemName = ""
-                            itemQuantity = ""
-                        }) {
-                            Text("Add")
+                        } else {
+                            requestPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                                    Manifest.permission.ACCESS_FINE_LOCATION
+                                )
+                            )
                         }
-                        Button(onClick = {
-                            showDialog = false
-                            itemName = ""
-                            itemQuantity = ""
-                        }) {
-                            Text("Cancel")
-                        }
-                    }
-                },
-                title = { Text(" Add shopping Item") },
-                text = {
-                    Column {
-                        OutlinedTextField(
-                            value = itemName,
-                            onValueChange = { itemName = it },
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp),
-                            label = { Text("Item Name") }
-                        )
+                    }) {
 
-                        OutlinedTextField(
-                            value = itemQuantity,
-                            onValueChange = { itemQuantity = it },
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp),
-                            label = { Text("Quantity") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                        )
-                    }
+                        Text("Address")
 
+                    }
                 }
 
-            )
+            }
 
-        }
+        )
 
     }
 
-
 }
+
 
 @Composable
 
@@ -188,6 +267,7 @@ fun ShoppingListItem(
         modifier = Modifier
             .padding(8.dp)
             .fillMaxWidth()
+            .background(Color.White)
             .border(
                 border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
                 shape = RoundedCornerShape(20)
@@ -195,8 +275,24 @@ fun ShoppingListItem(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = item.name, modifier = Modifier.padding(8.dp))
-        Text(text = " Qty: ${item.quantity}", modifier = Modifier.padding(8.dp))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(8.dp)
+        ) {
+            Row {
+                Text(text = item.name, modifier = Modifier.padding(8.dp))
+                Text(text = " Qty: ${item.quantity}", modifier = Modifier.padding(8.dp))
+            }
+            Row(modifier = Modifier.fillMaxWidth()) {
+
+                Icon(imageVector = Icons.Default.LocationOn, contentDescription = null)
+                Text(text = item.address)
+
+            }
+        }
+
         Row(
             modifier = Modifier.padding(8.dp)
         ) {
@@ -259,6 +355,6 @@ fun ShoppingItemEditor(item: ShoppingItem, onEditComplete: (String, Int) -> Unit
 @Composable
 fun ShoppingListPreview() {
     MyShoppingAppTheme {
-        ShoppingListApp()
+        // ShoppingListApp()
     }
 }
